@@ -48,6 +48,13 @@ extern "C"
 
 #endif /* ifdef __cplusplus */
 
+#if (CANTP_ENABLE_PTHREAD == STD_ON)
+
+#include <sys/time.h>
+#include <pthread.h>
+
+#endif /* #if (CANTP_ENABLE_PTHREAD == STD_ON) */
+
 #ifndef CANIF_H
 #include "CanIf.h"
 #endif /* #ifndef CANIF_H */
@@ -215,6 +222,13 @@ typedef struct
     uint32 n[0x06u];
     uint8_least dir;
     uint32 t_flag;
+
+#if (CANTP_ENABLE_PTHREAD == STD_ON)
+
+    uint32 last_dt;
+
+#endif /* #if (CANTP_ENABLE_PTHREAD == STD_ON) */
+
 } CanTp_NSduType;
 
 typedef struct
@@ -540,6 +554,26 @@ static CanTp_FrameStateType CanTp_LDataConTCF(CanTp_NSduType *pNSdu);
 #define CanTp_STOP_SEC_CODE_FAST
 #include "CanTp_MemMap.h"
 
+#if (CANTP_ENABLE_PTHREAD == STD_ON)
+
+#define CanTp_START_SEC_CODE_FAST
+#include "CanTp_MemMap.h"
+
+static void *CanTp_MainThread(void *);
+
+#define CanTp_STOP_SEC_CODE_FAST
+#include "CanTp_MemMap.h"
+
+#define CanTp_START_SEC_CODE_FAST
+#include "CanTp_MemMap.h"
+
+static uint32 CanTp_GetTimeUs();
+
+#define CanTp_STOP_SEC_CODE_FAST
+#include "CanTp_MemMap.h"
+
+#endif /* #if (CANTP_ENABLE_PTHREAD == STD_ON) */
+
 /** @} */
 
 
@@ -579,6 +613,12 @@ static CanTp_ChannelRtType CanTp_Rt[CANTP_MAX_NUM_OF_CHANNEL];
 
 #define CanTp_STOP_SEC_VAR_FAST_CLEARED_UNSPECIFIED
 #include "CanTp_MemMap.h"
+
+#if (CANTP_ENABLE_PTHREAD == STD_ON)
+
+static pthread_t CanTp_MainFunctionThread;
+
+#endif /* #if (CANTP_ENABLE_PTHREAD == STD_ON) */
 
 /** @} */
 
@@ -736,6 +776,13 @@ void CanTp_Init(const CanTp_ConfigType *pConfig)
         else
         {
             CanTp_State = CANTP_ON;
+
+#if (CANTP_ENABLE_PTHREAD == STD_ON)
+
+            (void)pthread_create(&CanTp_MainFunctionThread, NULL_PTR, CanTp_MainThread, NULL_PTR);
+
+#endif /* #if (CANTP_ENABLE_PTHREAD == STD_ON) */
+
         }
     }
     else
@@ -1124,6 +1171,7 @@ void CanTp_MainFunction(void)
     uint32_least channel_idx;
     uint32_least n_sdu_idx;
     CanTp_NSduType *p_n_sdu;
+    uint32 dt;
 
     CanTp_TaskStateType task_state_rx;
     CanTp_TaskStateType task_state_tx;
@@ -1152,16 +1200,35 @@ void CanTp_MainFunction(void)
                     CanTp_PerformStepTx(p_n_sdu);
                 }
 
-                CANTP_ENTER_CRITICAL_SECTION
-                p_n_sdu->n[0x00u] += CanTp_ConfigPtr->mainFunctionPeriod;
-                p_n_sdu->n[0x01u] += CanTp_ConfigPtr->mainFunctionPeriod;
-                p_n_sdu->n[0x02u] += CanTp_ConfigPtr->mainFunctionPeriod;
-                p_n_sdu->n[0x03u] += CanTp_ConfigPtr->mainFunctionPeriod;
-                p_n_sdu->n[0x04u] += CanTp_ConfigPtr->mainFunctionPeriod;
-                p_n_sdu->n[0x05u] += CanTp_ConfigPtr->mainFunctionPeriod;
-                p_n_sdu->rx.st_min += CanTp_ConfigPtr->mainFunctionPeriod;
-                p_n_sdu->tx.st_min += CanTp_ConfigPtr->mainFunctionPeriod;
-                CANTP_EXIT_CRITICAL_SECTION
+#if (CANTP_ENABLE_PTHREAD == STD_ON)
+
+                dt = CanTp_GetTimeUs();
+
+                if (p_n_sdu->last_dt == 0x00u)
+                {
+                    p_n_sdu->last_dt = dt;
+                    dt = 0x00u;
+                }
+                else
+                {
+                    dt = dt - p_n_sdu->last_dt;
+                    p_n_sdu->last_dt = dt;
+                }
+
+#else
+
+                dt = CanTp_ConfigPtr->mainFunctionPeriod;
+
+#endif /* #if (CANTP_ENABLE_PTHREAD == STD_ON) */
+
+                p_n_sdu->n[0x00u] += dt;
+                p_n_sdu->n[0x01u] += dt;
+                p_n_sdu->n[0x02u] += dt;
+                p_n_sdu->n[0x03u] += dt;
+                p_n_sdu->n[0x04u] += dt;
+                p_n_sdu->n[0x05u] += dt;
+                p_n_sdu->rx.st_min += dt;
+                p_n_sdu->tx.st_min += dt;
             }
         }
     }
@@ -2695,6 +2762,27 @@ static void CanTp_SetPadding(uint8 *pBuffer, PduLengthType *pOfs, const uint8 va
 
     *pOfs = ofs;
 }
+
+#if (CANTP_ENABLE_PTHREAD == STD_ON)
+
+static void *CanTp_MainThread(void *data)
+{
+    while (TRUE)
+    {
+        CanTp_MainFunction();
+    }
+
+    return data;
+}
+
+static uint32 CanTp_GetTimeUs()
+{
+    struct timeval currentTime;
+    gettimeofday(&currentTime, NULL);
+    return currentTime.tv_sec * (sint32)1e6 + currentTime.tv_usec;
+}
+
+#endif /* #if (CANTP_ENABLE_PTHREAD == STD_ON) */
 
 /** @} */
 

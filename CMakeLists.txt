@@ -4,6 +4,7 @@ project(CanTp VERSION 0.1.0 LANGUAGES C)
 
 option(ENABLE_DET "enable/disable development error detection." ON)
 option(ENABLE_TEST "enable/disable tests." ON)
+option(ENABLE_PTHREAD "enable/disable pthread." OFF)
 option(ENABLE_SCA "enable/disable static code analysis." OFF)
 option(ENABLE_DOC "enable/disable documentation generation." OFF)
 set(MISRA_C_VERSION 2012 CACHE STRING "MISRA standard.")
@@ -42,12 +43,20 @@ target_compile_definitions(${PROJECT_NAME}
     PUBLIC CANTP_CHANGE_PARAMETER_API=STD_ON
     # ECUC_CanTp_00300
     PUBLIC CANTP_READ_PARAMETER_API=STD_ON
-    PUBLIC CANTP_BUILD_CFFI_INTERFACE=$<IF:$<BOOL:${ENABLE_TEST}>,STD_ON,STD_OFF>)
+    PUBLIC CANTP_BUILD_CFFI_INTERFACE=$<IF:$<BOOL:${ENABLE_TEST}>,STD_ON,STD_OFF>
+    PUBLIC CANTP_ENABLE_PTHREAD=$<IF:$<BOOL:${ENABLE_PTHREAD}>,STD_ON,STD_OFF>)
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC interface
     PUBLIC $<$<BOOL:${ENABLE_TEST}>:${CMAKE_CURRENT_SOURCE_DIR}/generated>
     PUBLIC $<$<BOOL:${ENABLE_TEST}>:${CMAKE_CURRENT_SOURCE_DIR}/test/stub>)
+
+if (${ENABLE_PTHREAD})
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads)
+    target_link_libraries(${PROJECT_NAME}
+        PUBLIC Threads::Threads)
+endif()
 
 if (${ENABLE_TEST})
     ENABLE_TESTing()
